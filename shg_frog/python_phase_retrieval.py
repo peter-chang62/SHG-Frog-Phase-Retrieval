@@ -11,8 +11,10 @@ import scipy.optimize as spo
 try:
     import mkl_fft
 
+    print("USING MKL")
     use_mkl = True
 except ImportError:
+    print("NOT USING MKL")
 
     class mkl_fft:
         """
