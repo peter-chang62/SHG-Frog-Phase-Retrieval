@@ -2,7 +2,7 @@ import numpy as np
 import scipy.constants as sc
 import scipy.integrate as scint
 import matplotlib.pyplot as plt
-from pynlo_extras import BBO
+from shg_frog import BBO
 from scipy.fftpack import next_fast_len
 import scipy.interpolate as spi
 import copy
@@ -254,7 +254,7 @@ def calculate_spectrogram(pulse, T_delay):
 
     Args:
         pulse (object):
-            pulse instance from pynlo.light
+            pulse instance
         T_delay (1D array):
             time delay axis (mks units)
 
@@ -915,7 +915,7 @@ class Retrieval:
                 2 ** 12 = 4096
 
         Notes:
-            This initializes a pulse using PyNLO with a sech envelope, whose
+            This initializes a pulse with a sech envelope, whose
             time bandwidth is set according to the intensity autocorrelation
             of the spectrogram. Realize that the spectrogram could have been
             slightly altered depending on whether it's been denoised(called by
@@ -929,9 +929,7 @@ class Retrieval:
         spl = spi.UnivariateSpline(self.T_fs, normalize(x) - 0.5, s=0)
         roots = spl.roots()
 
-        # --------------- switched to using connor's pynlo class --------------
-        # T0 = np.diff(roots[[0, -1]]) * 0.65 / 1.76
-        T0 = np.diff(roots[[0, -1]]) * 0.65  # 1.76 factor already in pulse class
+        T0 = np.diff(roots[[0, -1]])
         self._pulse = Pulse.Sech(
             NPTS,
             sc.c / (wl_max_nm * 1e-9),
