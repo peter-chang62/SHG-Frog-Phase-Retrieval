@@ -11,10 +11,10 @@ import scipy.optimize as spo
 try:
     import mkl_fft
 
-    print("USING MKL")
+    print("USING MKL FOR FFT'S IN PYTHON SHG FROG PHASE RETRIEVAL")
     use_mkl = True
 except ImportError:
-    print("NOT USING MKL")
+    print("NOT USING MKL FOR FFT'S IN PYTHON SHG FROG PHASE RETRIEVAL")
 
     class mkl_fft:
         """
