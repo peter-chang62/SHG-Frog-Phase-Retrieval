@@ -1503,7 +1503,8 @@ class Retrieval:
             # res = spo.minimize(func, np.array([1]),
             #                    args=[abs(self.pulse.AW) ** 2, abs(self.pulse_data.AW) ** 2])
             # factor = res.x
-            factor = max(self.pulse.p_v) / max(self.pulse_data.p_v)
+            # factor = max(self.pulse.p_v) / max(self.pulse_data.p_v)
+            factor = self.pulse.e_p / self.pulse_data.e_p
             ax[1].plot(
                 self.pulse_data.v_grid * 1e-12,
                 self.pulse_data.p_v * factor,
