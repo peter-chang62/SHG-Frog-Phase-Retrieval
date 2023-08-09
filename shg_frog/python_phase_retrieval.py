@@ -7,6 +7,7 @@ from scipy.fftpack import next_fast_len
 import scipy.interpolate as spi
 import copy
 import scipy.optimize as spo
+import collections
 
 try:
     import mkl_fft
@@ -33,6 +34,196 @@ except ImportError:
 
         def irfft_numpy(x, axis=-1, forward_scale=1.0):
             return np.fft.irfft(x, axis=axis) / forward_scale
+
+
+_ResampledV = collections.namedtuple("ResampledV", ["v_grid", "f_v", "dv", "dt"])
+
+_ResampledT = collections.namedtuple("ResampledT", ["t_grid", "f_t", "dt"])
+
+PowerSpectralWidth = collections.namedtuple(
+    "PowerSpectralWidth", ["fwhm", "rms", "eqv"]
+)
+
+PowerEnvelopeWidth = collections.namedtuple(
+    "PowerEnvelopeWidth", ["fwhm", "rms", "eqv"]
+)
+
+
+def resample_v(v_grid, f_v, n):
+    """
+    Resample frequency-domain data to the given number of points.
+
+    The complementary time data is assumed to be of finite support, so the
+    resampling is accomplished by adding or removing trailing and leading time
+    bins. Discontinuities in the frequency-domain amplitude will manifest as
+    ringing when resampled.
+
+    Parameters
+    ----------
+    v_grid : array_like of float
+        The frequency grid of the input data.
+    f_v : array_like of complex
+        The frequency-domain data to be resampled.
+    n : int
+        The number of points at which to resample the input data. When the
+        input corresponds to a real-valued time domain representation, this
+        number is the number of points in the time domain.
+
+    Returns
+    -------
+    v_grid : ndarray of float
+        The resampled frequency grid.
+    f_v : ndarray of real or complex
+        The resampled frequency-domain data.
+    dv : float
+        The spacing of the resampled frequency grid.
+    dt : float
+        The spacing of the resampled time grid.
+
+    Notes
+    -----
+    If the number of points is odd, there are an equal number of points on
+    the positive and negative side of the time grid. If even, there is one
+    extra point on the negative side.
+
+    This method checks if the origin is contained in `v_grid` to determine
+    whether real or complex transformations should be performed. In both cases
+    the resampling is accomplished by removing trailing and leading time bins.
+
+    For analytic representations, the returned frequency grid is defined
+    symmetrically about its reference, as in the `TFGrid` class, and for
+    real-valued representations the grid is defined starting at the origin.
+
+    """
+    assert isinstance(
+        n, (int, np.integer)
+    ), "The requested number of points must be an integer"
+    assert n > 0, "The requested number of points must be greater than 0."
+    assert len(v_grid) == len(
+        f_v
+    ), "The frequency grid and frequency-domain data must be the same length."
+    # ---- Inverse Transform
+    dv_0 = np.diff(v_grid).mean()
+    if v_grid[0] == 0:
+        assert np.isreal(
+            f_v[0]
+        ), "When the input is in the real-valued representation, the amplitude at the origin must be real."
+
+        # Real-Valued Representation
+        if np.isreal(f_v[-1]):
+            n_0 = 2 * (len(v_grid) - 1)
+        else:
+            n_0 = 2 * (len(v_grid) - 1) + 1
+        dt_0 = 1 / (n_0 * dv_0)
+        f_t = fft.fftshift(fft.irfft(f_v, fsc=dt_0, n=n_0))
+    else:
+        # Analytic Representation
+        n_0 = len(v_grid)
+        dt_0 = 1 / (n_0 * dv_0)
+        v_ref_0 = v_grid[n_0 // 2]
+        f_t = fft.fftshift(fft.ifft(fft.ifftshift(f_v), fsc=dt_0, overwrite_x=True))
+
+    # ---- Resample
+    dn_n = n // 2 - n_0 // 2  # leading time bins
+    dn_p = (n - 1) // 2 - (n_0 - 1) // 2  # trailing time bins
+    if n > n_0:
+        f_t = np.pad(f_t, (dn_n, dn_p), mode="constant", constant_values=0)
+    elif n < n_0:
+        f_t = f_t[-dn_n : n_0 + dn_p]
+
+    # ---- Transform
+    dt = 1 / (n_0 * dv_0)
+    dv = 1 / (n * dt)
+    if v_grid[0] == 0:
+        # Real-Valued Representation
+        f_v = fft.rfft(fft.ifftshift(f_t), fsc=dt)
+        v_grid = dv * np.arange(len(f_v))
+    else:
+        # Analytic Representation
+        f_v = fft.fftshift(fft.fft(fft.ifftshift(f_t), fsc=dt, overwrite_x=True))
+        v_grid = dv * (np.arange(n) - (n // 2))
+        v_grid += v_ref_0
+
+    # ---- Construct ResampledV
+    resampled = _ResampledV(v_grid=v_grid, f_v=f_v, dv=dv, dt=1 / (n * dv))
+    return resampled
+
+
+def resample_t(t_grid, f_t, n):
+    """
+    Resample time-domain data to the given number of points.
+
+    The complementary frequency data is assumed to be band-limited, so the
+    resampling is accomplished by adding or removing high frequency bins.
+    Discontinuities in the time-domain amplitude will manifest as ringing when
+    resampled.
+
+    Parameters
+    ----------
+    t_grid : array_like of float
+        The time grid of the input data.
+    f_t : array_like of real or complex
+        The time-domain data to be resampled.
+    n : int
+        The number of points at which to resample the input data.
+
+    Returns
+    -------
+    t_grid : ndarray of float
+        The resampled time grid.
+    f_t : ndarray of real or complex
+        The resampled time-domain data.
+    dt : float
+        The spacing of the resampled time grid.
+
+    Notes
+    -----
+    If real, the resampling is accomplished by adding or removing the largest
+    magnitude frequency components (both positive and negative). If complex,
+    the input data is assumed to be analytic, so the resampling is accomplished
+    by adding or removing the largest positive frequencies. This method checks
+    the input data's type, not the magnitude of its imaginary component, to
+    determine if it is real or complex.
+
+    The returned time axis is defined symmetrically about the input's
+    reference, such as in the `TFGrid` class.
+
+    """
+    assert isinstance(
+        n, (int, np.integer)
+    ), "The requested number of points must be an integer"
+    assert n > 0, "The requested number of points must be greater than 0."
+    assert len(t_grid) == len(
+        f_t
+    ), "The time grid and time-domain data must be the same length."
+    # ---- Define Time Grid
+    n_0 = len(t_grid)
+    dt_0 = np.diff(t_grid).mean()
+    t_ref_0 = t_grid[n_0 // 2]
+    dv = 1 / (n_0 * dt_0)
+    dt = 1 / (n * dv)
+    t_grid = dt * (np.arange(n) - (n // 2))
+    t_grid += t_ref_0
+
+    # ---- Resample
+    if np.isrealobj(f_t):
+        # Real-Valued Representation
+        f_v = fft.rfft(fft.ifftshift(f_t), fsc=dt_0)
+        if (n > n_0) and not (n % 2):
+            f_v[-1] /= 2  # renormalize aliased Nyquist component
+        f_t = fft.fftshift(fft.irfft(f_v, fsc=dt, n=n))
+    else:
+        # Analytic Representation
+        f_v = fft.fftshift(fft.fft(fft.ifftshift(f_t), fsc=dt_0, overwrite_x=True))
+        if n > n_0:
+            f_v = np.pad(f_v, (0, n - n_0), mode="constant", constant_values=0)
+        elif n < n_0:
+            f_v = f_v[:n]
+        f_t = fft.fftshift(fft.ifft(fft.ifftshift(f_v), fsc=dt, overwrite_x=True))
+
+    # ---- Construct ResampledT
+    resampled = _ResampledT(t_grid=t_grid, f_t=f_t, dt=dt)
+    return resampled
 
 
 def normalize(x):
@@ -674,6 +865,120 @@ class Pulse(TFGrid):
         else:
             p.import_p_v(pulse.v_grid, pulse.p_v, phi_v=pulse.phi_v)
         return p
+
+    def t_width(self, m=None):
+        """
+        Calculate the width of the pulse in the time domain.
+
+        Set `m` to optionally resample the number of points and change the
+        time resolution.
+
+        Parameters
+        ----------
+        m : float, optional
+            The multiplicative number of points at which to resample the power
+            envelope. The default is to not resample.
+
+        Returns
+        -------
+        fwhm : float
+            The full width at half maximum of the power envelope.
+        rms : float
+            The full root-mean-square width of the power envelope.
+        eqv : float
+            The equivalent width of the power envelope.
+
+        """
+        # ---- Power
+        p_t = self.p_t
+
+        # ---- Resample
+        if m is None:
+            n = self.n
+            t_grid = self.t_grid
+            dt = self.dt
+        else:
+            assert m > 0, "The point multiplier must be greater than 0."
+            n = round(m * self.n)
+            resampled = resample_t(self.t_grid, p_t, n)
+            p_t = resampled.f_t
+            t_grid = resampled.t_grid
+            dt = resampled.dt
+
+        # ---- FWHM
+        p_max = p_t.max()
+        t_selector = t_grid[p_t >= 0.5 * p_max]
+        t_fwhm = dt + (t_selector.max() - t_selector.min())
+
+        # ---- RMS
+        p_norm = np.sum(p_t * dt)
+        t_avg = np.sum(t_grid * p_t * dt) / p_norm
+        t_var = np.sum((t_grid - t_avg) ** 2 * p_t * dt) / p_norm
+        t_rms = 2 * t_var**0.5
+
+        # ---- Equivalent
+        t_eqv = 1 / np.sum((p_t / p_norm) ** 2 * dt)
+
+        # ---- Construct PowerEnvelopeWidth
+        t_widths = PowerEnvelopeWidth(fwhm=t_fwhm, rms=t_rms, eqv=t_eqv)
+        return t_widths
+
+    def v_width(self, m=None):
+        """
+        Calculate the width of the pulse in the frequency domain.
+
+        Set `m` to optionally resample the number of points and change the
+        frequency resolution.
+
+        Parameters
+        ----------
+        m : float, optional
+            The multiplicative number of points at which to resample the power
+            spectrum. The default is to not resample.
+
+        Returns
+        -------
+        fwhm : float
+            The full width at half maximum of the power spectrum.
+        rms : float
+            The full root-mean-square width of the power spectrum.
+        eqv : float
+            The equivalent width of the power spectrum.
+
+        """
+        # ---- Power
+        p_v = self.p_v
+
+        # ---- Resample
+        if m is None:
+            n = self.n
+            v_grid = self.v_grid
+            dv = self.dv
+        else:
+            assert m > 0, "The point multiplier must be greater than 0."
+            n = round(m * self.n)
+            resampled = resample_v(self.v_grid, p_v, n)
+            p_v = resampled.f_v
+            v_grid = resampled.v_grid
+            dv = resampled.dv
+
+        # ---- FWHM
+        p_max = p_v.max()
+        v_selector = v_grid[p_v >= 0.5 * p_max]
+        v_fwhm = dv + (v_selector.max() - v_selector.min())
+
+        # ---- RMS
+        p_norm = np.sum(p_v * dv)
+        v_avg = np.sum(v_grid * p_v * dv) / p_norm
+        v_var = np.sum((v_grid - v_avg) ** 2 * p_v * dv) / p_norm
+        v_rms = 2 * v_var**0.5
+
+        # ---- Equivalent
+        v_eqv = 1 / np.sum((p_v / p_norm) ** 2 * dv)
+
+        # ---- Construct PowerSpectralWidth
+        v_widths = PowerSpectralWidth(fwhm=v_fwhm, rms=v_rms, eqv=v_eqv)
+        return v_widths
 
 
 class Retrieval:
