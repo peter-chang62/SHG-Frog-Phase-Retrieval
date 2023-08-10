@@ -38,11 +38,11 @@ except ImportError:
         def ifft(x, axis=-1, fsc=1.0):
             return np.fft.ifft(x, axis=axis) / fsc
 
-        def rfft_numpy(x, axis=-1, fsc=1.0):
-            return np.fft.rfft(x, axis=axis) * fsc
+        def rfft_numpy(x, axis=-1, fsc=1.0, n=None):
+            return np.fft.rfft(x, axis=axis, n=n) * fsc
 
-        def irfft_numpy(x, axis=-1, fsc=1.0):
-            return np.fft.irfft(x, axis=axis) / fsc
+        def irfft_numpy(x, axis=-1, fsc=1.0, n=None):
+            return np.fft.irfft(x, axis=axis, n=n) / fsc
 
 
 _ResampledV = collections.namedtuple("ResampledV", ["v_grid", "f_v", "dv", "dt"])
@@ -124,13 +124,13 @@ def resample_v(v_grid, f_v, n):
         else:
             n_0 = 2 * (len(v_grid) - 1) + 1
         dt_0 = 1 / (n_0 * dv_0)
-        f_t = fft.fftshift(fft.irfft(f_v, fsc=dt_0, n=n_0))
+        f_t = np.fft.fftshift(mkl_fft.irfft_numpy(f_v, fsc=dt_0, n=n_0))
     else:
         # Analytic Representation
         n_0 = len(v_grid)
         dt_0 = 1 / (n_0 * dv_0)
         v_ref_0 = v_grid[n_0 // 2]
-        f_t = fft.fftshift(fft.ifft(fft.ifftshift(f_v), fsc=dt_0, overwrite_x=True))
+        f_t = np.fft.fftshift(mkl_fft.ifft(np.fft.ifftshift(f_v), fsc=dt_0))
 
     # ---- Resample
     dn_n = n // 2 - n_0 // 2  # leading time bins
@@ -145,11 +145,11 @@ def resample_v(v_grid, f_v, n):
     dv = 1 / (n * dt)
     if v_grid[0] == 0:
         # Real-Valued Representation
-        f_v = fft.rfft(fft.ifftshift(f_t), fsc=dt)
+        f_v = mkl_fft.rfft_numpy(np.fft.ifftshift(f_t), fsc=dt)
         v_grid = dv * np.arange(len(f_v))
     else:
         # Analytic Representation
-        f_v = fft.fftshift(fft.fft(fft.ifftshift(f_t), fsc=dt, overwrite_x=True))
+        f_v = np.fft.fftshift(mkl_fft.fft(np.fft.ifftshift(f_t), fsc=dt))
         v_grid = dv * (np.arange(n) - (n // 2))
         v_grid += v_ref_0
 
@@ -217,18 +217,18 @@ def resample_t(t_grid, f_t, n):
     # ---- Resample
     if np.isrealobj(f_t):
         # Real-Valued Representation
-        f_v = fft.rfft(fft.ifftshift(f_t), fsc=dt_0)
+        f_v = mkl_fft.rfft_numpy(np.fft.ifftshift(f_t), fsc=dt_0)
         if (n > n_0) and not (n % 2):
             f_v[-1] /= 2  # renormalize aliased Nyquist component
-        f_t = fft.fftshift(fft.irfft(f_v, fsc=dt, n=n))
+        f_t = np.fft.fftshift(mkl_fft.irfft_numpy(f_v, fsc=dt, n=n))
     else:
         # Analytic Representation
-        f_v = fft.fftshift(fft.fft(fft.ifftshift(f_t), fsc=dt_0, overwrite_x=True))
+        f_v = np.fft.fftshift(mkl_fft.fft(np.fft.ifftshift(f_t), fsc=dt_0))
         if n > n_0:
             f_v = np.pad(f_v, (0, n - n_0), mode="constant", constant_values=0)
         elif n < n_0:
             f_v = f_v[:n]
-        f_t = fft.fftshift(fft.ifft(fft.ifftshift(f_v), fsc=dt, overwrite_x=True))
+        f_t = np.fft.fftshift(mkl_fft.ifft(np.fft.ifftshift(f_v), fsc=dt))
 
     # ---- Construct ResampledT
     resampled = _ResampledT(t_grid=t_grid, f_t=f_t, dt=dt)
@@ -387,9 +387,7 @@ def irfft(x, axis=None, fsc=1.0):
         return np.fft.fftshift(mkl_fft.irfft_numpy(x, fsc=fsc))
 
     else:
-        return np.fft.fftshift(
-            mkl_fft.irfft_numpy(x, axis=axis, fsc=fsc), axes=axis
-        )
+        return np.fft.fftshift(mkl_fft.irfft_numpy(x, axis=axis, fsc=fsc), axes=axis)
 
 
 def shift(x, freq, shift, fsc=1.0, freq_is_angular=False, x_is_real=False):
