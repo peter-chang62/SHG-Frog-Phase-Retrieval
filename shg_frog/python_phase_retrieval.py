@@ -10,6 +10,15 @@ import scipy.optimize as spo
 import collections
 
 try:
+    import pynlo
+
+    pynlo_imported = True
+    print("PYNLO IS INSTALLED")
+except ImportError:
+    pynlo_imported = False
+    print("PYNLO IS NOT INSTALLED")
+
+try:
     import mkl_fft
 
     print("USING MKL FOR FFT'S IN PYTHON SHG FROG PHASE RETRIEVAL")
@@ -833,7 +842,13 @@ class Pulse(TFGrid):
         )(self.v_grid)
 
         if phi_v is not None:
-            assert isinstance(phi_v, np.ndarray) and phi_v.shape == p_v.shape
+            if pynlo_imported:
+                assert (
+                    isinstance(phi_v, np.ndarray)
+                    or isinstance(phi_v, pynlo.utility.misc.ArrayWrapper)
+                ) and phi_v.shape == p_v.shape
+            else:
+                assert isinstance(phi_v, np.ndarray) and phi_v.shape == p_v.shape
             phi_v = spi.interp1d(
                 v_grid, phi_v, kind="cubic", bounds_error=False, fill_value=0.0
             )(self.v_grid)
@@ -848,7 +863,10 @@ class Pulse(TFGrid):
 
     @classmethod
     def clone_pulse(cls, pulse):
-        assert isinstance(pulse, Pulse) or isinstance(pulse, Pulse)
+        if pynlo_imported:
+            assert isinstance(pulse, Pulse) or isinstance(pulse, pynlo.light.Pulse)
+        else:
+            assert isinstance(pulse, Pulse)
         pulse: Pulse
         n_points = pulse.n
         v_min = pulse.v_grid[0]
@@ -979,6 +997,20 @@ class Pulse(TFGrid):
         # ---- Construct PowerSpectralWidth
         v_widths = PowerSpectralWidth(fwhm=v_fwhm, rms=v_rms, eqv=v_eqv)
         return v_widths
+
+    def spectrogram_shg(self, T_delay):
+        """
+        calculate the shg spectrogram over a given time delay axis
+
+        Args:
+            T_delay (1D array):
+                time delay axis (mks units)
+
+        Returns:
+            2D array:
+                the calculated spectrogram over pulse.v_grid and T_delay
+        """
+        return calculate_spectrogram(self, T_delay)
 
 
 class Retrieval:
