@@ -32,17 +32,17 @@ except ImportError:
             fft, ifft, rfft_numpy and irfft_numpy
         """
 
-        def fft(x, axis=-1, forward_scale=1.0):
-            return np.fft.fft(x, axis=axis) * forward_scale
+        def fft(x, axis=-1, fsc=1.0):
+            return np.fft.fft(x, axis=axis) * fsc
 
-        def ifft(x, axis=-1, forward_scale=1.0):
-            return np.fft.ifft(x, axis=axis) / forward_scale
+        def ifft(x, axis=-1, fsc=1.0):
+            return np.fft.ifft(x, axis=axis) / fsc
 
-        def rfft_numpy(x, axis=-1, forward_scale=1.0):
-            return np.fft.rfft(x, axis=axis) * forward_scale
+        def rfft_numpy(x, axis=-1, fsc=1.0):
+            return np.fft.rfft(x, axis=axis) * fsc
 
-        def irfft_numpy(x, axis=-1, forward_scale=1.0):
-            return np.fft.irfft(x, axis=axis) / forward_scale
+        def irfft_numpy(x, axis=-1, fsc=1.0):
+            return np.fft.irfft(x, axis=axis) / fsc
 
 
 _ResampledV = collections.namedtuple("ResampledV", ["v_grid", "f_v", "dv", "dt"])
@@ -275,11 +275,11 @@ def fft(x, axis=None, fsc=1.0):
 
     if axis is None:
         # default is axis=-1
-        return np.fft.fftshift(mkl_fft.fft(np.fft.ifftshift(x), forward_scale=fsc))
+        return np.fft.fftshift(mkl_fft.fft(np.fft.ifftshift(x), fsc=fsc))
 
     else:
         return np.fft.fftshift(
-            mkl_fft.fft(np.fft.ifftshift(x, axes=axis), axis=axis, forward_scale=fsc),
+            mkl_fft.fft(np.fft.ifftshift(x, axes=axis), axis=axis, fsc=fsc),
             axes=axis,
         )
 
@@ -308,11 +308,11 @@ def ifft(x, axis=None, fsc=1.0):
 
     if axis is None:
         # default is axis=-1
-        return np.fft.fftshift(mkl_fft.ifft(np.fft.ifftshift(x), forward_scale=fsc))
+        return np.fft.fftshift(mkl_fft.ifft(np.fft.ifftshift(x), fsc=fsc))
 
     else:
         return np.fft.fftshift(
-            mkl_fft.ifft(np.fft.ifftshift(x, axes=axis), axis=axis, forward_scale=fsc),
+            mkl_fft.ifft(np.fft.ifftshift(x, axes=axis), axis=axis, fsc=fsc),
             axes=axis,
         )
 
@@ -384,11 +384,11 @@ def irfft(x, axis=None, fsc=1.0):
 
     if axis is None:
         # default is axis=-1
-        return np.fft.fftshift(mkl_fft.irfft_numpy(x, forward_scale=fsc))
+        return np.fft.fftshift(mkl_fft.irfft_numpy(x, fsc=fsc))
 
     else:
         return np.fft.fftshift(
-            mkl_fft.irfft_numpy(x, axis=axis, forward_scale=fsc), axes=axis
+            mkl_fft.irfft_numpy(x, axis=axis, fsc=fsc), axes=axis
         )
 
 
