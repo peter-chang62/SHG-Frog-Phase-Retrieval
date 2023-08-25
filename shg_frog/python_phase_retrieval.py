@@ -326,15 +326,17 @@ class Retrieval:
             bbo.phase_match_angle_rad(1.55),
             BBO.deg_to_rad(deg),
         )
-        ind_10perc = (
-            np.argmin(abs(R[300:] - 0.1)) + 300
-        )  # the frog spectrogram doesn't usually extend past here
 
-        self.spectrogram[:, ind_10perc:] /= R[ind_10perc:]
+        # avoid the zero's of R, I just leverage the fact that the spectrum
+        # doesn't usually extend past the first zero on the short-wavelength
+        # side
+        ind_1perc = np.argmin(abs(R[235:] - 0.01)) + 235
+
+        self.spectrogram[:, ind_1perc:] /= R[ind_1perc:]
         self.denoise_spectrogram()
 
         self._min_pm_fthz = min(self.F_THz)
-        self._max_pm_fthz = self.F_THz[ind_10perc]
+        self._max_pm_fthz = self.F_THz[ind_1perc]
 
     def set_initial_guess(
         self,
