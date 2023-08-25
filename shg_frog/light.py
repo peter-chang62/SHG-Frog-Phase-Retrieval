@@ -25,24 +25,80 @@ PowerEnvelopeWidth = collections.namedtuple(
 )
 
 
+class ArrayWrapper(np.lib.mixins.NDArrayOperatorsMixin):
+
+    """
+    This array wrapper is used for numpy arrays so that in place modification
+    will call the setter function, whereas by default this does not occur
+    """
+
+    def __init__(self, getitem, setitem):
+        self.__getitem = getitem
+        self.__setitem = setitem
+
+    # array indexing (main reason for the ArrayWrapper class)
+    def __getitem__(self, key):
+        return self.__getitem(key)
+
+    def __setitem__(self, key, val):
+        return self.__setitem(key, val)
+
+    # for print out in console
+    def __repr__(self):
+        return repr(self.__getitem__(...))
+
+    # easily accessible __array__()
+    def __array__(self, dtype=None):
+        array = self.__getitem__(...)
+        if dtype is None:
+            return array
+        else:
+            return array.astype(dtype=dtype)
+
+    # __len__ doesn't seem to be caught by __getattr__
+    def __len__(self):
+        return len(self.__array__())
+
+    # all the other stuff
+    def __getattr__(self, name):
+        return getattr(self.__array__(), name)
+
+
+class PropertyForArray(property):
+    def __get__(self, instance, owner):
+        """
+        The default __get__ would be self.fget(instance), which just calls the
+        getter function defined in the owner class
+        """
+
+        def getitem(key):
+            return self.fget(instance, key)
+
+        def setitem(key, val):
+            assert self.fset is not None, f"a setter has not been defined"
+            self.fset(instance, val, key)  # key is a kwarg in Pulse so it comes last
+
+        return ArrayWrapper(getitem, setitem)
+
+
 class Pulse(TFGrid):
     def __init__(self, n_points, v0, v_min, v_max, time_window, a_t):
         super().__init__(n_points, v0, v_min, v_max, time_window)
 
-        self._a_t = a_t
+        self._a_t = a_t.astype(np.complex128)
 
-    @property
-    def a_t(self):
+    @PropertyForArray
+    def a_t(self, key=...):
         """
         time domain electric field
 
         Returns:
             1D array
         """
-        return self._a_t
+        return self._a_t[key]
 
-    @property
-    def a_v(self):
+    @PropertyForArray
+    def a_v(self, key=...):
         """
         frequency domain electric field is given as the fft of the time domain
         electric field
@@ -50,20 +106,20 @@ class Pulse(TFGrid):
         Returns:
             1D array
         """
-        return fft(self.a_t, fsc=self.dt)
+        return fft(self.a_t, fsc=self.dt)[key]
 
     @a_t.setter
-    def a_t(self, a_t):
+    def a_t(self, a_t, key=...):
         """
         set the time domain electric field
 
         Args:
             a_t (1D array)
         """
-        self._a_t = a_t.astype(np.complex128)
+        self._a_t[key] = a_t
 
     @a_v.setter
-    def a_v(self, a_v):
+    def a_v(self, a_v, key=...):
         """
         setting the frequency domain electric field is accomplished by setting
         the time domain electric field
@@ -71,42 +127,44 @@ class Pulse(TFGrid):
         Args:
             a_v (1D array)
         """
+        if key is not ...:
+            _a_v = self.a_v.copy()
+            _a_v[key] = a_v
+            a_v = _a_v
         self.a_t = ifft(a_v, fsc=self.dt)
 
-    @property
-    def phi_v(self):
+    @PropertyForArray
+    def phi_v(self, key=...):
         """
         frequency domain phase
 
         Returns:
             1D array
         """
-        return np.angle(self.a_v)
+        return np.angle(self.a_v[key])
 
-    @property
-    def phi_t(self):
+    @PropertyForArray
+    def phi_t(self, key=...):
         """
         time domain phase
 
         Returns:
             1D array
         """
-        return np.angle(self.a_t)
+        return np.angle(self.a_t[key])
 
     @phi_v.setter
-    def phi_v(self, phi_v):
+    def phi_v(self, phi_v, key=...):
         """
         sets the frequency domain phase
 
         Args:
             phi_v (1D array)
         """
-        assert isinstance(phi_v, np.ndarray)
-        assert phi_v.shape == self.a_v.shape
-        self.a_v = abs(self.a_v) * np.exp(1j * phi_v)
+        self.a_v[key] = abs(self.a_v[key]) * np.exp(1j * phi_v)
 
     @phi_t.setter
-    def phi_t(self, phi_t):
+    def phi_t(self, phi_t, key=...):
         """
         sets the time domain phase
 
@@ -114,29 +172,27 @@ class Pulse(TFGrid):
             phi_t (1D array)
         """
 
-        assert isinstance(phi_t, np.ndarray)
-        assert phi_t.shape == self.a_t.shape
-        self.a_t = abs(self.a_t) * np.exp(1j * phi_t)
+        self.a_t[key] = abs(self.a_t[key]) * np.exp(1j * phi_t)
 
-    @property
-    def p_t(self):
+    @PropertyForArray
+    def p_t(self, key=...):
         """
         time domain power
 
         Returns:
             1D array
         """
-        return abs(self.a_t) ** 2
+        return abs(self.a_t[key]) ** 2
 
-    @property
-    def p_v(self):
+    @PropertyForArray
+    def p_v(self, key=...):
         """
         frequency domain power
 
         Returns:
             1D array
         """
-        return abs(self.a_v) ** 2
+        return abs(self.a_v[key]) ** 2
 
     @property
     def e_p(self):
@@ -229,9 +285,12 @@ class Pulse(TFGrid):
                 assert (
                     isinstance(phi_v, np.ndarray)
                     or isinstance(phi_v, pynlo.utility.misc.ArrayWrapper)
+                    or isinstance(phi_v, ArrayWrapper)
                 ) and phi_v.shape == p_v.shape
             else:
-                assert isinstance(phi_v, np.ndarray) and phi_v.shape == p_v.shape
+                assert (
+                    isinstance(phi_v, np.ndarray) or isinstance(phi_v, ArrayWrapper)
+                ) and phi_v.shape == p_v.shape
             phi_v = spi.interp1d(
                 v_grid, phi_v, kind="cubic", bounds_error=False, fill_value=0.0
             )(self.v_grid)
