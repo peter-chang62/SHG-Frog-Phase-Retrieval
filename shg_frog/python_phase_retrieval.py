@@ -89,6 +89,11 @@ def load_data(path):
     T_fs -= T_fs[ind]
     T_fs = T_fs[ind - ind_keep : ind + ind_keep]
 
+    # wavelength -> frequency
+    factor = sc.c / (F_THz * 1e12) ** 2
+    factor /= factor.max()
+    spectrogram *= factor
+
     return wl_nm, F_THz, T_fs, normalize(spectrogram)
 
 
@@ -409,6 +414,12 @@ class Retrieval:
             wl_um, spectrum, kind="linear", bounds_error=False, fill_value=0.0
         )
         p_v = p_v_callable(pulse_data.wl_grid * 1e6)
+
+        # psd in wavelength -> psd in frequency
+        factor = sc.c / pulse_data.v_grid**2
+        factor /= factor.max()  # normalize
+        p_v *= factor
+
         pulse_data.a_v = p_v**0.5  # phase = 0
         self._pulse_data = pulse_data
 
