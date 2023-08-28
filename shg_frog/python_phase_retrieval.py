@@ -573,16 +573,35 @@ class Retrieval:
             # _________________________________________________________________
 
             if plot_update:
+                (idx,) = np.logical_and(
+                    self.min_sig_fthz / 2 < self.pulse.v_grid * 1e-12,
+                    self.pulse.v_grid * 1e-12 < self.max_sig_fthz / 2,
+                ).nonzero()
+
+                v_width = self.pulse.v_width(200).rms
+                v_ll = self.pulse.v0 - v_width
+                v_ul = self.pulse.v0 + v_width
+                (idx_p,) = np.logical_and(
+                    v_ll < self.pulse.v_grid, self.pulse.v_grid < v_ul
+                ).nonzero()
+
                 [ax.clear() for ax in [ax1, ax2, ax3]]
                 ax1.plot(self.pulse.t_grid * 1e12, self.pulse.p_t)
-                ax2.plot(self.pulse.v_grid * 1e-12, self.pulse.p_v)
+                ax2.plot(self.pulse.v_grid[idx] * 1e-12, self.pulse.p_v[idx])
+                p = np.unwrap(np.angle(self.pulse.a_v[idx_p])) * 180 / np.pi
                 ax3.plot(
-                    self.pulse.v_grid * 1e-12,
-                    np.unwrap(np.angle(self.pulse.a_v)),
+                    self.pulse.v_grid[idx_p] * 1e-12,
+                    p,
                     color="C1",
                 )
-                ax2.set_xlim(self.min_sig_fthz / 2, self.max_sig_fthz / 2)
                 fig.suptitle(itr)
+                ax1.set_xlabel("time (s)")
+                ax2.set_xlabel("frequency (THz)")
+                ax3.yaxis.set_label_position("right")
+                ax3.set_ylabel("phase (deg)")
+                ax1.yaxis.set_visible(False)
+                ax2.yaxis.set_visible(False)
+                fig.tight_layout()
                 plt.pause(0.1)
 
             s = self.pulse.spectrogram_shg(self.T_fs * 1e-15)[
@@ -609,6 +628,20 @@ class Retrieval:
 
         fig, ax = plt.subplots(2, 2)
         ax = ax.flatten()
+        axp = ax[1].twinx()
+
+        # plot the phase on same plot as frequency domain
+        (idx,) = np.logical_and(
+            self.min_sig_fthz / 2 < self.pulse.v_grid * 1e-12,
+            self.pulse.v_grid * 1e-12 < self.max_sig_fthz / 2,
+        ).nonzero()
+
+        v_width = self.pulse.v_width(200).rms
+        v_ll = self.pulse.v0 - v_width
+        v_ul = self.pulse.v0 + v_width
+        (idx_p,) = np.logical_and(
+            v_ll < self.pulse.v_grid, self.pulse.v_grid < v_ul
+        ).nonzero()
 
         # plot time domain
         ax[0].plot(self.pulse.t_grid * 1e12, self.pulse.p_t)
@@ -617,14 +650,8 @@ class Retrieval:
         ax[1].plot(self.pulse.v_grid * 1e-12, self.pulse.p_v)
         ax[1].set_xlim(self.min_sig_fthz / 2, self.max_sig_fthz / 2)
 
-        # plot the phase on same plot as frequency domain
-        axp = ax[1].twinx()
-        ind_sig = np.logical_and(
-            self.pulse.v_grid * 1e-12 * 2 >= self.min_sig_fthz,
-            self.pulse.v_grid * 1e-12 * 2 <= self.max_sig_fthz,
-        ).nonzero()[0]
-        phase = BBO.rad_to_deg(np.unwrap(np.angle(self.pulse.a_v[ind_sig])))
-        axp.plot(self.pulse.v_grid[ind_sig] * 1e-12, phase, color="C1")
+        phase = np.unwrap(np.angle(self.pulse.a_v[idx_p])) * 180 / np.pi
+        axp.plot(self.pulse.v_grid[idx_p] * 1e-12, phase, color="C1")
 
         # plot the experimental spectrogram
         ax[2].pcolormesh(self.T_fs, self.F_THz / 2, self.spectrogram.T, cmap="CMRmap_r")
