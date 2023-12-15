@@ -274,10 +274,10 @@ class Pulse(TFGrid):
                 phase, default is transform limited, you would set this
                 if you have a frog retrieval, for example
         """
-        p_v = np.where(p_v > 0, p_v, 1e-20)
+        p_v = np.where(p_v > 0, p_v, 0.0)
         amp_v = p_v**0.5
         amp_v = spi.interp1d(
-            v_grid, amp_v, kind="cubic", bounds_error=False, fill_value=1e-20
+            v_grid, amp_v, kind="cubic", bounds_error=False, fill_value=0.0
         )(self.v_grid)
 
         if phi_v is not None:
@@ -323,7 +323,8 @@ class Pulse(TFGrid):
         if isinstance(pulse, Pulse):
             p.a_v[:] = pulse.a_v[:]
         else:
-            p.import_p_v(pulse.v_grid, pulse.p_v, phi_v=pulse.phi_v)
+            # make sure to unwrap the phase before fitting!
+            p.import_p_v(pulse.v_grid, pulse.p_v, phi_v=np.unwrap(pulse.phi_v))
         return p
 
     def t_width(self, m=None):
@@ -439,6 +440,35 @@ class Pulse(TFGrid):
         # ---- Construct PowerSpectralWidth
         v_widths = PowerSpectralWidth(fwhm=v_fwhm, rms=v_rms, eqv=v_eqv)
         return v_widths
+
+    @property
+    def tg_v(self):
+        """
+        The spectral group delay, with units of ``s``.
+
+        Returns
+        -------
+        ndarray of float
+
+        """
+        return self.t_grid[self.n // 2] - np.gradient(
+            np.unwrap(self.phi_v) / (2 * np.pi), self.v_grid, edge_order=2
+        )
+
+    @property
+    def vg_t(self):
+        """
+        The instantaneous frequency of the complex envelope, with units of
+        ``Hz``.
+
+        Returns
+        -------
+        ndarray of float
+
+        """
+        return self.v_grid[self.n // 2] + np.gradient(
+            np.unwrap(self.phi_t) / (2 * np.pi), self.t_grid, edge_order=2
+        )
 
     def spectrogram_shg(self, T_delay):
         """
