@@ -202,7 +202,7 @@ class TFGrid:
     def __init__(self, n_points, v0, v_min, v_max, time_window):
         assert isinstance(n_points, int)
         assert time_window > 0
-        assert 0 < v_min < v0 < v_max
+        assert v_min < v0 < v_max
 
         # ------------- calculate frequency bandwidth -------------------------
         v_span_pos = (v_max - v0) * 2.0
